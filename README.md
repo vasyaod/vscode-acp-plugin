@@ -22,7 +22,8 @@ Open Settings and search for `acp`.
 | Setting | Meaning |
 |---|---|
 | `acp.url` | WebSocket URL of the agent, e.g. `wss://agent.example.com/acp` (`ws://` works for local agents). |
-| `acp.authMode` | `token` (default), `oauth`, or `none`. |
+| `acp.authMode` | `token` (default), `oauth`, `command`, or `none`. |
+| `acp.tokenCommand` | For `command` mode: a shell command that prints the bearer token. **User settings only.** |
 | `acp.extraHeaders` | Extra headers for the WebSocket upgrade, e.g. `{"X-Org": "acme"}`. Not for secrets. |
 | `acp.oauth.issuer` | OAuth issuer URL, used only when the agent publishes no protected-resource metadata. |
 | `acp.oauth.clientId` | OAuth public client id. Default `vscode-acp-plugin`. |
@@ -46,21 +47,45 @@ The authorization server is discovered generically:
 
 `client_id` defaults to `vscode-acp-plugin` (the auth server must accept it, or register it and set `acp.oauth.clientId`). When the server answers close code `4401` or HTTP `401`, the chat offers **Sign in again**. In remote windows (SSH, WSL, Codespaces) the loopback redirect needs port forwarding; if the callback cannot reach the extension host, use token mode.
 
+### Auth mode: Token command
+
+For credentials that expire: the extension runs `acp.tokenCommand` at **every connect** and sends what it prints as `Authorization: Bearer <token>`. A command that mints a short-lived token from a key kept in the OS keychain means no long-lived secret is ever stored in the editor.
+
+- It runs through your shell, in your **home directory**, with no stdin and a 30-second timeout. It must print only the token on stdout.
+- Its output is never logged or shown. A failure shows the exit code and the first line of stderr.
+- `acp.tokenCommand` can be set **only in user settings** (`"scope": "machine"`); a workspace's `.vscode/settings.json` cannot set it. Opening a cloned repository never makes the extension run a command from it.
+- Use absolute paths: an editor started from the Dock or the Start menu has a short `PATH`.
+- When the agent closes the connection because the token expired (close code `4401` on an open connection), the chat says so as a note, not an error, and the next prompt reconnects with a fresh token.
+
 ### Example: agent-swarm
 
+Recommended: an auth-service machine principal with one environment grant (agent-swarm `docs/ACP.md`, "The auth choice"). Its `fpa_…` key lives in the macOS keychain, and agent-swarm's `acp-client/swarm_jwt.py` exchanges it for a ~10-minute JWT at every connect:
+
+```bash
+security add-generic-password -s agent-swarm-fpa -a "$USER" -w
+```
+
 ```jsonc
-// settings.json
+// user settings.json
 {
   "acp.url": "wss://agent-swarm.f-proj.com/acp",
-  "acp.authMode": "token"
+  "acp.authMode": "command",
+  "acp.tokenCommand": "/usr/bin/python3 /path/to/agent-swarm/acp-client/swarm_jwt.py --fpa-command 'security find-generic-password -s agent-swarm-fpa -w'"
 }
 ```
 
-Then **ACP: Set Token** with the swarm's operator token. (agent-swarm refuses run tokens on `/acp` and answers 403 / close code 4403; the chat tells you so. Browser sign-in against `https://auth.f-proj.com` needs a server-side change in agent-swarm first.)
+The operator token also works (`"acp.authMode": "token"`, then **ACP: Set Token**), but it is a full-power credential. Run tokens and `sws_…` service keys are refused on `/acp` with close code 4403, and the chat tells you so.
 
 ### Pointing it at any other ACP agent
 
-Anything that serves ACP over a WebSocket with `initialize`, `session/new` and `session/prompt` works. Set `acp.url`, pick the auth mode the server wants (`none` for an unauthenticated local agent), and, if it needs extra headers, add them in `acp.extraHeaders`. The extension advertises the `fs.readTextFile`, `fs.writeTextFile` and `terminal` client capabilities, so the agent can ask for them. `session/load` is not used: after a dropped connection the next prompt starts a **new session**.
+Anything that serves ACP over a WebSocket with `initialize`, `session/new` and `session/prompt` works. Set `acp.url`, pick the auth mode the server wants (`none` for an unauthenticated local agent), and, if it needs extra headers, add them in `acp.extraHeaders`. The extension advertises the `fs.readTextFile`, `fs.writeTextFile` and `terminal` client capabilities, so the agent can ask for them.
+
+**After a dropped connection** the next prompt reconnects and, when the agent supports it, puts the **same session** back on the new connection, so the conversation continues:
+
+- standard `session/load` when the agent advertises `loadSession` (the history the agent replays is not shown again: the chat already has it);
+- agent-swarm's extension, `session/new` with `_meta.agentSwarm.resumeSessionId`, when the agent advertises `_meta.agentSwarm.resumeSession`. A `-32001` "busy" answer (the old turn is still ending) is retried for up to 20 s.
+
+Otherwise, or when the agent refuses, the prompt starts a **new session** and the chat says so. **New chat** always starts a new session.
 
 ## Using it
 
@@ -86,7 +111,9 @@ Anything that serves ACP over a WebSocket with `initialize`, `session/new` and `
 | "rejected the credentials (4401 / HTTP 401)" | wrong, missing or expired credential: **Sign in again** / **ACP: Set Token** |
 | "refused access (4403)" / "refused the connection (HTTP 403)" | the server understood the credential but won't let it drive an agent session (or doesn't accept it) |
 | "Cannot reach host (ECONNREFUSED / ENOTFOUND …)" | wrong URL, offline, firewall |
-| "The connection to host was lost" | the socket dropped, possibly mid-turn; the next prompt reconnects with a new session |
+| "The connection to host was lost" | the socket dropped, possibly mid-turn; the next prompt reconnects, in the same session if the agent supports re-attaching |
+| "The token command failed (exit code N): …" | `acp.tokenCommand` exited non-zero; the text after the colon is its first stderr line |
+| "The agent closed the connection because its token expired" | a note, not an error (command mode): the next prompt reconnects with a fresh token |
 
 ## Architecture
 
@@ -136,7 +163,9 @@ Real VS Code **and** Cursor:
 - [ ] Send a second prompt that refers to the first ("what was the directory again?") → same session, it remembers.
 - [ ] Choose **Always allow** once; the next command of the same kind does not prompt. **New chat** → prompts again.
 - [ ] Start a long prompt (e.g. `run sleep 60`) and press **Stop** → "Stopped."; the next prompt works.
-- [ ] Kill the network / restart the server mid-turn → a "connection was lost" notice; the next prompt reconnects ("new session").
+- [ ] Kill the network / restart the server mid-turn → a "connection was lost" notice; the next prompt reconnects ("new session", or "continues in the same session" against an agent that supports re-attaching).
+- [ ] Command mode: set `acp.tokenCommand` in **user** settings, `acp.authMode` = `command`; the chat connects. The same key in the workspace's `.vscode/settings.json` is ignored.
+- [ ] Command mode against agent-swarm with an auth-service JWT: wait past the token's expiry → a "token expired" note (not an error); the next prompt continues the same conversation.
 - [ ] (VS Code with Copilot Chat) `@acp hello` replies in the Chat view.
 - [ ] Sign in with browser against a server that supports it: **ACP: Sign In** opens the browser, returns to the editor, and the chat connects.
 

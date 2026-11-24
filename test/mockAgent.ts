@@ -8,6 +8,12 @@ export interface MockAgentOptions {
   forbiddenToken?: string;
   /** Refuse the HTTP upgrade itself with this status (what a real proxy/Starlette does). */
   handshakeStatus?: number;
+  /** Advertise a way to re-attach a session: agent-swarm's session/new `_meta`, or standard session/load. */
+  resume?: 'agentSwarm' | 'load';
+  /** Answer the first N re-attach attempts with -32001 (the old turn is still ending). */
+  busyResumes?: number;
+  /** Accept any token whose string starts with this prefix (stands in for fresh JWTs). */
+  tokenPrefix?: string;
 }
 
 type Pending = { resolve: (v: any) => void; reject: (e: Error) => void };
@@ -25,6 +31,10 @@ export class MockAgent {
   observed: Record<string, any> = {};
   permissionAnswers: any[] = [];
   sessions: string[] = [];
+  /** Session ids put back on a new connection, in order. */
+  resumed: string[] = [];
+  /** Per session: the prompts it has seen across connections (what the agent "remembers"). */
+  history = new Map<string, string[]>();
   cancelled = false;
   initParams: any;
   private sockets = new Set<WebSocket>();
@@ -63,13 +73,19 @@ export class MockAgent {
     for (const s of this.sockets) s.terminate();
   }
 
+  /** Close every client socket cleanly with a close code (e.g. 4401 when a JWT expired). */
+  closeAll(code: number, reason: string): void {
+    for (const s of this.sockets) s.close(code, reason);
+  }
+
   private onConnection(ws: WebSocket, auth: string | undefined): void {
     this.authHeaders.push(auth);
     if (this.opts.forbiddenToken && auth === `Bearer ${this.opts.forbiddenToken}`) {
       ws.close(4403, 'an agent run may not drive an ACP session');
       return;
     }
-    if (this.opts.token !== undefined && auth !== `Bearer ${this.opts.token}`) {
+    const prefixOk = this.opts.tokenPrefix !== undefined && (auth ?? '').startsWith(`Bearer ${this.opts.tokenPrefix}`);
+    if (this.opts.token !== undefined && auth !== `Bearer ${this.opts.token}` && !prefixOk) {
       ws.close(4401, 'missing or invalid credentials');
       return;
     }
@@ -111,12 +127,32 @@ export class MockAgent {
             this.initParams = msg.params;
             return reply({
               protocolVersion: 1,
-              agentCapabilities: { loadSession: false },
+              agentCapabilities: {
+                loadSession: this.opts.resume === 'load',
+                ...(this.opts.resume === 'agentSwarm' ? { _meta: { agentSwarm: { resumeSession: true } } } : {}),
+              },
               authMethods: [],
               agentInfo: { name: 'mock-agent', version: '0.0.1' },
             });
+          case 'session/load': {
+            if (this.opts.resume !== 'load') return fail(-32601, 'session/load is not supported');
+            const sid = String(msg.params?.sessionId ?? '');
+            const refusal = this.resumeRefusal(sid);
+            if (refusal) return fail(refusal[0], refusal[1]);
+            // ACP: the agent replays the conversation before it answers.
+            for (const p of this.history.get(sid) ?? []) chunk(sid, `REPLAYED ${p}`);
+            this.resumed.push(sid);
+            return reply(null);
+          }
           case 'session/new': {
             if (!msg.params?.cwd || !msg.params.cwd.startsWith('/')) return fail(-32602, 'cwd must be absolute');
+            const want = msg.params?._meta?.agentSwarm?.resumeSessionId;
+            if (want !== undefined && this.opts.resume === 'agentSwarm') {
+              const refusal = this.resumeRefusal(String(want));
+              if (refusal) return fail(refusal[0], refusal[1]);
+              this.resumed.push(String(want));
+              return reply({ sessionId: String(want) });
+            }
             const sid = `sess-${this.sessions.length + 1}`;
             this.sessions.push(sid);
             this.observed.cwd = msg.params.cwd;
@@ -126,6 +162,15 @@ export class MockAgent {
             const sid = msg.params.sessionId as string;
             const text = (msg.params.prompt?.[0]?.text as string) ?? '';
             this.cancelled = false;
+            const seen = this.history.get(sid) ?? [];
+            if (text.startsWith('recall')) {
+              chunk(sid, `you said: ${seen.join(' | ')}`);
+              seen.push(text);
+              this.history.set(sid, seen);
+              return reply({ stopReason: 'end_turn' });
+            }
+            seen.push(text);
+            this.history.set(sid, seen);
             const stop = await this.turn(text, sid, { call, update, chunk, ws });
             return reply({ stopReason: stop });
           }
@@ -136,6 +181,16 @@ export class MockAgent {
         fail(-32000, (e as Error).message);
       }
     });
+  }
+
+  /** Why a re-attach of `sid` is refused right now, or undefined to accept it. */
+  private resumeRefusal(sid: string): [number, string] | undefined {
+    if (!this.sessions.includes(sid)) return [-32602, 'session not found'];
+    if ((this.opts.busyResumes ?? 0) > 0) {
+      this.opts.busyResumes = (this.opts.busyResumes ?? 0) - 1;
+      return [-32001, "this session's previous turn is still stopping; try again in a moment"];
+    }
+    return undefined;
   }
 
   private waitForCancel(): Promise<void> {

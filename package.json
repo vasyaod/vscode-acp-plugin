@@ -127,15 +127,23 @@
           "enum": [
             "token",
             "oauth",
+            "command",
             "none"
           ],
           "enumDescriptions": [
             "Send a bearer token (stored in the secret store, set with **ACP: Set Token**) in the Authorization header.",
             "Sign in with the browser (OAuth 2.0 authorization code + PKCE). Use **ACP: Sign In**.",
+            "Run **`acp.tokenCommand`** at every connect and send what it prints as the bearer token (e.g. a short-lived JWT minted from a key in the OS keychain).",
             "Send no credentials."
           ],
           "default": "token",
           "description": "How to authenticate to the agent."
+        },
+        "acp.tokenCommand": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Used when `acp.authMode` is `command`. A shell command run at every connect, in your home directory, with no stdin and a 30 s timeout. It must print only the token on stdout; the output is never logged. Use absolute paths: an editor started from the Dock has a short `PATH`. **User settings only**: a workspace cannot set it."
         },
         "acp.extraHeaders": {
           "type": "object",
