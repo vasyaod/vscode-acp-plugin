@@ -1,0 +1,39 @@
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; margin: 0; padding: 0; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); }
+.status { padding: 4px 10px; font-size: 11px; opacity: .8; border-bottom: 1px solid var(--vscode-panel-border); }
+.status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--vscode-descriptionForeground); }
+.status .connected { background: var(--vscode-testing-iconPassed, #3fb950); }
+.status .connecting { background: var(--vscode-editorWarning-foreground, #d29922); }
+.status .error { background: var(--vscode-errorForeground, #f85149); }
+.log { flex: 1; overflow-y: auto; padding: 8px 10px; }
+.msg { margin: 8px 0; white-space: pre-wrap; word-wrap: break-word; line-height: 1.45; }
+.msg.user { background: var(--vscode-input-background); border-left: 3px solid var(--vscode-focusBorder); padding: 6px 8px; border-radius: 3px; }
+.msg.thought { font-style: italic; opacity: .65; font-size: 12px; }
+.msg code { font-family: var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
+.msg pre { font-family: var(--vscode-editor-font-family); background: var(--vscode-textCodeBlock-background); padding: 6px 8px; border-radius: 4px; overflow-x: auto; white-space: pre; }
+.msg pre code { background: none; padding: 0; }
+.notice { margin: 8px 0; padding: 6px 8px; border-radius: 3px; font-size: 12px; background: var(--vscode-inputValidation-infoBackground); border: 1px solid var(--vscode-inputValidation-infoBorder); }
+.notice.error { background: var(--vscode-inputValidation-errorBackground); border-color: var(--vscode-inputValidation-errorBorder); }
+.notice button { margin-top: 6px; }
+details.card { margin: 6px 0; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-editorWidget-background); }
+details.card summary { cursor: pointer; padding: 5px 8px; list-style: none; display: flex; gap: 8px; align-items: center; }
+details.card summary::-webkit-details-marker { display: none; }
+.card .kind { font-size: 10px; text-transform: uppercase; opacity: .7; border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 0 4px; }
+.card .title { flex: 1; font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+.card .badge.completed { background: var(--vscode-testing-iconPassed, #3fb950); color: #fff; }
+.card .badge.failed { background: var(--vscode-errorForeground, #f85149); color: #fff; }
+.card .badge.in_progress { background: var(--vscode-editorWarning-foreground, #d29922); color: #000; }
+.card .body { padding: 4px 8px 8px; }
+.card .body pre { margin: 0; max-height: 240px; overflow: auto; font-family: var(--vscode-editor-font-family); font-size: 12px; white-space: pre-wrap; }
+.card .loc { font-size: 11px; opacity: .7; }
+.composer { border-top: 1px solid var(--vscode-panel-border); padding: 8px 10px; }
+textarea { width: 100%; box-sizing: border-box; resize: vertical; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border, transparent); font-family: inherit; font-size: inherit; padding: 4px 6px; }
+textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
+.buttons { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+.spacer { flex: 1; }
+button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 4px 12px; cursor: pointer; border-radius: 2px; }
+button:hover { background: var(--vscode-button-hoverBackground); }
+button:disabled { opacity: .5; cursor: default; }
+button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+button.danger { background: var(--vscode-errorForeground, #c72e0f); color: #fff; }
