@@ -1,0 +1,191 @@
+{
+  "name": "vscode-acp-plugin",
+  "displayName": "ACP Remote Agent Client",
+  "description": "Chat with a remote ACP (Agent Client Protocol) agent over WebSocket. The agent's commands and file edits run locally, in your workspace.",
+  "version": "0.1.0",
+  "publisher": "vasyaod",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vasyaod/vscode-acp-plugin.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "acp",
+    "agent client protocol",
+    "ai",
+    "agent",
+    "websocket"
+  ],
+  "main": "./dist/extension.js",
+  "icon": "media/icon.png",
+  "activationEvents": [],
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies --out dist/vscode-acp-plugin.vsix",
+    "test:integration": "tsc -p . && node out-test/test/integration/runTest.js"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "acp",
+          "title": "ACP Agent",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "acp": [
+        {
+          "type": "webview",
+          "id": "acp.chatView",
+          "name": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "acp.newChat",
+        "title": "New Chat",
+        "category": "ACP",
+        "icon": "$(add)"
+      },
+      {
+        "command": "acp.stop",
+        "title": "Stop",
+        "category": "ACP",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "acp.focus",
+        "title": "Open Chat",
+        "category": "ACP"
+      },
+      {
+        "command": "acp.setToken",
+        "title": "Set Token",
+        "category": "ACP"
+      },
+      {
+        "command": "acp.signIn",
+        "title": "Sign In",
+        "category": "ACP"
+      },
+      {
+        "command": "acp.signOut",
+        "title": "Sign Out",
+        "category": "ACP"
+      },
+      {
+        "command": "acp.showOutput",
+        "title": "Show Output",
+        "category": "ACP"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "acp.newChat",
+          "when": "view == acp.chatView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "acp.stop",
+          "when": "view == acp.chatView && acp.running",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "chatParticipants": [
+      {
+        "id": "acp.agent",
+        "name": "acp",
+        "fullName": "ACP Agent",
+        "description": "Talk to your remote ACP agent. Commands and file edits run locally.",
+        "isSticky": true
+      }
+    ],
+    "configuration": {
+      "title": "ACP Agent",
+      "properties": {
+        "acp.url": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "WebSocket URL of the remote ACP agent, e.g. `wss://agent.example.com/acp`."
+        },
+        "acp.authMode": {
+          "type": "string",
+          "enum": [
+            "token",
+            "oauth",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Send a bearer token (stored in the secret store, set with **ACP: Set Token**) in the Authorization header.",
+            "Sign in with the browser (OAuth 2.0 authorization code + PKCE). Use **ACP: Sign In**.",
+            "Send no credentials."
+          ],
+          "default": "token",
+          "description": "How to authenticate to the agent."
+        },
+        "acp.extraHeaders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "markdownDescription": "Extra HTTP headers sent with the WebSocket upgrade request. Do not put secrets here; use **ACP: Set Token**."
+        },
+        "acp.oauth.issuer": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "OAuth issuer URL, used when the agent does not publish `/.well-known/oauth-protected-resource`. Its `/.well-known/oauth-authorization-server` metadata (RFC 8414) is then fetched."
+        },
+        "acp.oauth.clientId": {
+          "type": "string",
+          "default": "vscode-acp-plugin",
+          "description": "OAuth public client_id."
+        },
+        "acp.oauth.scope": {
+          "type": "string",
+          "default": "",
+          "description": "Optional OAuth scope to request."
+        },
+        "acp.autoAllow": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Allow every permission request from the agent without asking. **Dangerous**: the agent can then run any command and write any file in your workspace."
+        },
+        "acp.showThoughts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the agent's thought chunks in the chat."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "1.90.0",
+    "@types/ws": "^8.5.12",
+    "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
