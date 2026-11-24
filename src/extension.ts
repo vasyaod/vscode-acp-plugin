@@ -20,6 +20,7 @@ export function activate(ctx: vscode.ExtensionContext): AcpApi {
 
   const chat = new ChatController({
     connectionConfig: () => credentials.connectionConfig(),
+    renewsCredentials: () => readSettings().authMode === 'command',
     cwd: () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
     clientInfo: { name: 'vscode-acp-plugin', version },
     services: {
@@ -92,7 +93,15 @@ export function activate(ctx: vscode.ExtensionContext): AcpApi {
     }
   };
 
-  const reauth = () => (readSettings().authMode === 'oauth' ? doSignIn() : setToken());
+  const reauth = () => {
+    const mode = readSettings().authMode;
+    if (mode === 'oauth') return doSignIn();
+    if (mode === 'command') {
+      // User settings only: the token command is never read from the workspace.
+      return vscode.commands.executeCommand('workbench.action.openSettings', 'acp.tokenCommand');
+    }
+    return setToken();
+  };
   const view = new ChatViewProvider(ctx, chat, (action) => {
     if (action === 'reauth') void reauth();
     else if (action === 'settings') void vscode.commands.executeCommand('workbench.action.openSettings', 'acp');
@@ -113,7 +122,12 @@ export function activate(ctx: vscode.ExtensionContext): AcpApi {
     }),
     vscode.commands.registerCommand('acp.showOutput', () => out.show(true)),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('acp.url') || e.affectsConfiguration('acp.authMode') || e.affectsConfiguration('acp.extraHeaders')) {
+      if (
+        e.affectsConfiguration('acp.url') ||
+        e.affectsConfiguration('acp.authMode') ||
+        e.affectsConfiguration('acp.extraHeaders') ||
+        e.affectsConfiguration('acp.tokenCommand')
+      ) {
         chat.disconnect();
       }
     }),

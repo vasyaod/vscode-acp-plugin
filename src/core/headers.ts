@@ -1,6 +1,6 @@
 import { AcpError } from './errors';
 
-export type AuthMode = 'token' | 'oauth' | 'none';
+export type AuthMode = 'token' | 'oauth' | 'command' | 'none';
 
 export interface ConnectionSettings {
   url: string;
@@ -24,6 +24,9 @@ export function buildHeaders(s: ConnectionSettings, secret: string | undefined):
     headers['Authorization'] = `Bearer ${secret}`;
   } else if (s.authMode === 'oauth') {
     if (!secret) throw new AcpError('auth', 'Not signed in. Run "ACP: Sign In".');
+    headers['Authorization'] = `Bearer ${secret}`;
+  } else if (s.authMode === 'command') {
+    if (!secret) throw new AcpError('auth', 'The token command gave no token. Check "acp.tokenCommand".');
     headers['Authorization'] = `Bearer ${secret}`;
   }
   return headers;

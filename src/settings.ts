@@ -1,9 +1,21 @@
 import * as vscode from 'vscode';
 import { AcpError } from './core/errors';
 import { AuthMode, ConnectionSettings, buildHeaders } from './core/headers';
+import { runTokenCommand } from './core/tokenCommand';
 
 const TOKEN_KEY = 'acp.token';
 const OAUTH_KEY = 'acp.oauth';
+
+/**
+ * `acp.tokenCommand` from the USER (or remote-machine) settings only. The setting is
+ * declared `"scope": "machine"`, which already keeps workspace values out; reading the
+ * global value explicitly makes sure a cloned repo's .vscode/settings.json can never
+ * choose a command for this extension to run.
+ */
+export function readTokenCommand(): string {
+  const v = vscode.workspace.getConfiguration('acp').inspect<string>('tokenCommand');
+  return (v?.globalValue ?? '').trim();
+}
 
 export function readSettings(): ConnectionSettings & { issuer: string; clientId: string; scope: string; showThoughts: boolean } {
   const c = vscode.workspace.getConfiguration('acp');
@@ -59,9 +71,12 @@ export class Credentials {
     return undefined;
   }
 
+  /** Called at every connect, so a token command always hands over a fresh token. */
   async connectionConfig(): Promise<{ url: string; headers: Record<string, string> }> {
     const s = readSettings();
-    const secret = await this.current(s.authMode);
+    // Validate the URL before running anything.
+    buildHeaders({ ...s, authMode: 'none' }, undefined);
+    const secret = s.authMode === 'command' ? await runTokenCommand(readTokenCommand()) : await this.current(s.authMode);
     return { url: s.url.trim(), headers: buildHeaders(s, secret) };
   }
 }

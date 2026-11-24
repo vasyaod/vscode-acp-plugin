@@ -148,6 +148,54 @@ export class AcpClient {
     return s;
   }
 
+  /**
+   * How this agent lets a client put an earlier session back on a new connection:
+   * standard `session/load` (`loadSession`), agent-swarm's `session/new` extension
+   * (`_meta.agentSwarm.resumeSession`, which skips the history replay), or not at all.
+   */
+  get resumeMethod(): 'load' | 'agentSwarm' | undefined {
+    const caps = this.agentCapabilities ?? {};
+    if (caps._meta?.agentSwarm?.resumeSession === true) return 'agentSwarm';
+    if (caps.loadSession === true) return 'load';
+    return undefined;
+  }
+
+  /**
+   * Re-attach session `id` (from an earlier connection) to this one. Returns the
+   * session, or undefined when the agent offers no way to do it. A refusal (busy,
+   * unknown session) is thrown as the agent's RpcError.
+   *
+   * With `session/load` the agent replays the conversation as session/update
+   * notifications before it answers; nobody listens to the session yet, so the
+   * replay is dropped: the chat already shows it.
+   */
+  async resumeSession(id: string, cwd: string): Promise<AcpSession | undefined> {
+    const how = this.resumeMethod;
+    if (!how) return undefined;
+    if (how === 'load') {
+      const s = new AcpSession(id, cwd, this, this.services);
+      this.sessions.set(id, s);
+      try {
+        await this.conn.request('session/load', { sessionId: id, cwd, mcpServers: [] });
+      } catch (e) {
+        this.sessions.delete(id);
+        throw e;
+      }
+      return s;
+    }
+    const res = await this.conn.request('session/new', {
+      cwd,
+      mcpServers: [],
+      _meta: { agentSwarm: { resumeSessionId: id } },
+    });
+    if (!res || typeof res.sessionId !== 'string') {
+      throw new AcpError('protocol', 'The agent answered session/new without a sessionId.');
+    }
+    const s = new AcpSession(res.sessionId, cwd, this, this.services);
+    this.sessions.set(s.id, s);
+    return s;
+  }
+
   releaseSession(s: AcpSession): void {
     this.sessions.delete(s.id);
   }

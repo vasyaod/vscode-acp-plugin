@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AcpApi } from '../../src/extension';
+import { readTokenCommand } from '../../src/settings';
 import { VscodeFs } from '../../src/vscodeHost';
 import { MockAgent } from '../mockAgent';
 
@@ -71,6 +72,31 @@ export async function run(): Promise<void> {
     await turn;
     assert.ok(agent.cancelled, 'ACP: Stop sent session/cancel');
     assert.strictEqual(agent.sessions.length, 2, 'New chat opened a second session');
+
+    // ── Token command: user settings only, run at every connect ──
+    // A workspace's .vscode/settings.json must never choose the command.
+    fs.mkdirSync(path.join(workspace, '.vscode'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, '.vscode', 'settings.json'),
+      JSON.stringify({ 'acp.tokenCommand': 'echo from-the-workspace' }),
+    );
+    const t1 = Date.now();
+    while (cfg.inspect('tokenCommand')?.workspaceValue === undefined && Date.now() - t1 < 5000) {
+      await new Promise((r) => setTimeout(r, 50));
+      await vscode.workspace.getConfiguration('acp'); // re-read after the file watcher fires
+    }
+    assert.strictEqual(readTokenCommand(), '', 'a workspace value of acp.tokenCommand is ignored');
+
+    api.chat.disconnect();
+    await api.chat.newChat();
+    await cfg.update('tokenCommand', 'printf it-token', vscode.ConfigurationTarget.Global);
+    await cfg.update('authMode', 'command', vscode.ConfigurationTarget.Global);
+    assert.strictEqual(readTokenCommand(), 'printf it-token');
+    const before = agent.authHeaders.length;
+    await api.chat.send('again');
+    assert.deepStrictEqual(agent.authHeaders.slice(before), ['Bearer it-token'], 'command mode sent what the command printed');
+    const cmdErrors = api.chat.items.filter((i) => i.type === 'notice' && i.level === 'error');
+    assert.deepStrictEqual(cmdErrors, []);
     console.log('ACP integration: all checks passed');
   } finally {
     api.chat.disconnect();
