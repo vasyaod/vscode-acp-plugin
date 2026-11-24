@@ -71,6 +71,7 @@ export async function run(): Promise<void> {
     await turn;
     assert.ok(agent.cancelled, 'ACP: Stop sent session/cancel');
     assert.strictEqual(agent.sessions.length, 2, 'New chat opened a second session');
+    console.log('ACP integration: all checks passed');
   } finally {
     api.chat.disconnect();
     await agent.stop();
